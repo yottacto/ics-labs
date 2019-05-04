@@ -143,9 +143,10 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-  int tx = ~x & y;
-  int ty = ~y & x;
-  return ~(~tx & ~ty);
+  return (~(x & y) & (~(~x & ~y)));
+  // int tx = ~x & y;
+  // int ty = ~y & x;
+  // return ~(~tx & ~ty);
 }
 /*
  * tmin - return minimum two's complement integer
@@ -176,10 +177,10 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-  int mask = (0x55 << 8) | 0x55;
-  mask = (mask << 8) | mask;
-  x = x & ~mask;
-  return !(~(x | (x>>1)));
+  int mask = 0xaa;
+  mask |= mask << 8;
+  mask |= mask << 16;
+  return !((x & mask) ^ mask);
 }
 /*
  * negate - return -x
@@ -202,9 +203,9 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  int cond0 = ((x & ~0x0f) ^ 0x30);
-  int cond1 = !(!(x & 0x06) | !(x & 0x08));
-  return !(cond0 | cond1);
+  int cond0 = !((x & ~0x0f) ^ 0x30);
+  int cond1 = !(x & 0x06) | !(x & 0x08);
+  return cond0 & cond1;
 }
 /*
  * conditional - same as x ? y : z
@@ -214,8 +215,8 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  int mask = ((!!x) << 31) >> 31;
-  return (y & mask) | (z & ~mask);
+  int mask = ((!x) << 31) >> 31;
+  return (y & ~mask) | (z & mask);
 }
 /*
  * isLessOrEqual - if x <= y  then return 1, else return 0
@@ -228,18 +229,12 @@ int isLessOrEqual(int x, int y) {
   int hbit = 1<<31;
   int hx = (x & hbit);
   int hy = (y & hbit);
-  int h = (x ^ hx) ^ (y ^ hy);
-  hx = !hx;
-  hy = !hy;
-  h |= h >> 1;
-  h |= h >> 2;
-  h |= h >> 4;
-  h |= h >> 8;
-  h |= h >> 16;
-  h ^= h >> 1;
-  return (!h & !(hx ^ hy))
-    | ((!(x & h)) & (!(hx ^ hy)))
-    | ((hx ^ hy) & !hx);
+  int hxy = !(hx ^ hy);
+  int xy = x ^ y;
+  return (!xy)
+    | (!(x^hbit))
+    | (!(hxy | !hx))
+    | (hxy & !((y + (~x+1)) & hbit));
 }
 //4
 /*
@@ -257,13 +252,19 @@ int logicalNeg(int x) {
   // x |= (x >> 8) | (x << 8);
   // x |= (x >> 16) | (x << 16);
   // return x + 1;
-  x |= (x >> 1);
-  x |= (x >> 2);
-  x |= (x >> 4);
-  x |= (x >> 8);
-  x |= (x >> 16);
-  x ^= x + ~0;
-  return ((x + 1) >> 1) ^ 1;
+
+  // x |= (x >> 1);
+  // x |= (x >> 2);
+  // x |= (x >> 4);
+  // x |= (x >> 8);
+  // x |= (x >> 16);
+  // x ^= x + ~0;
+  // return ((x + 1) >> 1) ^ 1;
+
+  // clear out right first 1's left
+  x = x & (x ^ (x + ~0));
+  x = (~x + 1) >> 31;
+  return x + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -316,7 +317,23 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+  int mask_exp  = 0x7f800000;
+  int mask_frac = 0x7fffff;
+  int exp       = uf & mask_exp;
+  int frac      = uf & mask_frac;
+  if (exp == mask_exp) {
+    // inf or NaN
+    return uf;
+  } else if (exp == 0) {
+    // denormalized
+    if (frac & (1<<22))
+      return ((uf & ~mask_frac) | ((frac << 1) & mask_frac)) ^ (1<<23);
+    else
+      return (uf & ~mask_frac) | (frac << 1);
+  } else {
+    // normalized
+    return uf + (1<<23);
+  }
 }
 /*
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -331,7 +348,35 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+  int mask_exp  = 0x7f800000;
+  int mask_frac = 0x7fffff;
+  int exp       = uf & mask_exp;
+  int frac      = uf & mask_frac;
+  int out_range = 0x80000000u;
+  int e         = (exp >> 23) - 127;
+  int sign      = (uf >> 31) & 1;
+  int res       = 1;
+  if (exp == mask_exp) {
+    // inf or NaN
+    return out_range;
+  } else if (exp == 0) {
+    // denormalized
+    return 0;
+  } else {
+    // normalized
+    // speical case when sign=1, e=31 and frac=0x80000000, result is just equal
+    // to out_range.
+    if (e >= 31)
+      return out_range;
+    if (e < 0)
+      return 0;
+    while (e--) {
+      res = (res << 1) | ((frac >> 22) & 1);
+      frac <<= 1;
+    }
+    if (sign) res = -res;
+    return res;
+  }
 }
 /*
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -347,6 +392,14 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+  if (x > 127)
+    return 0x7f800000;
+  if (x < -149)
+    return 0;
+  // normalized
+  if (x > -127)
+    return (x + 127) << 23;
+  // denormalized, -149 <= x <= -127
+  return 1 << (23 - (-x - 126));
 }
 
