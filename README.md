@@ -21,5 +21,6 @@ Points  Rating  Errors  Points  Ops     Puzzle
 4       4       0       2       17      floatFloat2Int
 4       4       0       2       11      floatPower2
 
+Score = 62/62 [36/36 Corr + 26/26 Perf] (177 total operators)
 ```
 
