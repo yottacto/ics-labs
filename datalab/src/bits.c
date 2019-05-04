@@ -297,6 +297,7 @@ int howManyBits(int x) {
   x |= (x >> 8);
   x |= (x >> 16);
 
+  // count ones
   x = (x & mask0) + ((x >> 1) & mask0);
   x = (x & mask1) + ((x >> 2) & mask1);
   x = (x & mask2) + ((x >> 4) & mask2);
@@ -321,19 +322,21 @@ unsigned floatScale2(unsigned uf) {
   int mask_frac = 0x7fffff;
   int exp       = uf & mask_exp;
   int frac      = uf & mask_frac;
-  if (exp == mask_exp) {
-    // inf or NaN
+  int res       = 0;
+  int p2_22     = 0x00400000;
+  int p2_23     = 0x00800000;
+  // inf or NaN
+  if (exp == mask_exp)
     return uf;
-  } else if (exp == 0) {
-    // denormalized
-    if (frac & (1<<22))
-      return ((uf & ~mask_frac) | ((frac << 1) & mask_frac)) ^ (1<<23);
-    else
-      return (uf & ~mask_frac) | (frac << 1);
-  } else {
-    // normalized
-    return uf + (1<<23);
+  // denormalized
+  if (exp == 0) {
+    res = (uf & ~mask_frac) | ((frac << 1) & mask_frac);
+    if (frac & p2_22)
+      res ^= p2_23;
+    return res;
   }
+  // normalized
+  return uf + p2_23;
 }
 /*
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -354,29 +357,22 @@ int floatFloat2Int(unsigned uf) {
   int frac      = uf & mask_frac;
   int out_range = 0x80000000u;
   int e         = (exp >> 23) - 127;
-  int sign      = (uf >> 31) & 1;
+  int sign      = uf & 0x80000000;
   int res       = 1;
-  if (exp == mask_exp) {
-    // inf or NaN
+  // inf or NaN
+  if (exp == mask_exp)
     return out_range;
-  } else if (exp == 0) {
-    // denormalized
+  // normalized
+  // speical case when sign=1, e=31 and frac=0x80000000, result is just equal
+  // to out_range.
+  if (e >= 31)
+    return out_range;
+  // including too small value and denormalized
+  if (e < 0)
     return 0;
-  } else {
-    // normalized
-    // speical case when sign=1, e=31 and frac=0x80000000, result is just equal
-    // to out_range.
-    if (e >= 31)
-      return out_range;
-    if (e < 0)
-      return 0;
-    while (e--) {
-      res = (res << 1) | ((frac >> 22) & 1);
-      frac <<= 1;
-    }
-    if (sign) res = -res;
-    return res;
-  }
+  res = (res << e) | frac >> (23 - e);
+  if (sign) res = -res;
+  return res;
 }
 /*
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -392,14 +388,20 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
+  int inf = 0x7f800000;
+  // -149
+  int lower = 0xffffff6b;
+  // -127
+  int normal_lower = 0xffffff81;
   if (x > 127)
-    return 0x7f800000;
-  if (x < -149)
+    return inf;
+  if (x < lower)
     return 0;
   // normalized
-  if (x > -127)
+  if (x > normal_lower)
     return (x + 127) << 23;
   // denormalized, -149 <= x <= -127
-  return 1 << (23 - (-x - 126));
+  // return 1 << (23 - (-x - 126));
+  return 1 << (x + 149);
 }
 
