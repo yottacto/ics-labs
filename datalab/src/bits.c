@@ -226,15 +226,11 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  int hbit = 1<<31;
-  int hx = (x & hbit);
-  int hy = (y & hbit);
-  int hxy = !(hx ^ hy);
-  int xy = x ^ y;
-  return (!xy)
-    | (!(x^hbit))
-    | (!(hxy | !hx))
-    | (hxy & !((y + (~x+1)) & hbit));
+  int hx = x >> 31;
+  int hy = y >> 31;
+  int hxy = hx + hy;
+  return (hxy & (hx&1))
+    | (~hxy & !((y + ~x + 1) >> 31));
 }
 //4
 /*
@@ -246,25 +242,11 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4
  */
 int logicalNeg(int x) {
-  // x |= (x >> 1) | (x << 1);
-  // x |= (x >> 2) | (x << 2);
-  // x |= (x >> 4) | (x << 4);
-  // x |= (x >> 8) | (x << 8);
-  // x |= (x >> 16) | (x << 16);
-  // return x + 1;
-
-  // x |= (x >> 1);
-  // x |= (x >> 2);
-  // x |= (x >> 4);
-  // x |= (x >> 8);
-  // x |= (x >> 16);
-  // x ^= x + ~0;
-  // return ((x + 1) >> 1) ^ 1;
-
+  return ((~x&~(~x+1))>>31)&1;
   // clear out right first 1's left
-  x = x & (x ^ (x + ~0));
-  x = (~x + 1) >> 31;
-  return x + 1;
+  // x = x & (x ^ (x + ~0));
+  // x = (~x + 1) >> 31;
+  // return x + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -291,6 +273,7 @@ int howManyBits(int x) {
 
   // abs(x)
   x = (x ^ (x >> 31)) + !!(x>>31);
+
   x |= (x >> 1);
   x |= (x >> 2);
   x |= (x >> 4);
